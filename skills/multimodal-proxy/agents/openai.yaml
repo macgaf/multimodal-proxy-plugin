@@ -1,4 +1,4 @@
 interface:
   display_name: "多模态代理"
   short_description: "为纯文本主模型外包图像/视频/音频处理到外部多模态模型"
-  default_prompt: "分析这张图片 /path/to/image.png"
+  default_prompt: "分析这张图片"

@@ -3,20 +3,20 @@
 为纯文本主模型（如 glm-5.2、deepseek-v4）提供多模态外包能力的 Codex 插件。
 
 当主模型不支持图像/视频/音频时，通过内置 MCP 把多模态任务转交给外部多模态模型
-（OpenAI 兼容 API，如火山引擎 doubao-vision）处理，再把文字结果回填给主模型。
+（火山引擎 Coding Plan，如 doubao-seed-2.0-pro）处理，再把文字结果回填给主模型。
 配套 skill 规范了激活规则：仅纯文本主模型且有多模态需求时才启用。
 
 ## 架构
 
 ```
 用户（纯文本主模型 glm-5.2）
-  │  遇到"分析这张图" → skill 判断主模型是纯文本 → 调用 MCP 工具
+  │  遇到"分析这张图" → skill 判断主模型是纯文本 → 调用 process_multimodal
   ▼
-multimodal-proxy MCP（mcp/multimodal_proxy.py）
-  │  读配置 + keychain key → 调用外部多模态模型 API
+multimodal-proxy MCP
+  │  读配置 + keychain key → 调用火山引擎 doubao-seed-2.0-pro
   ▼
-外部多模态模型（火山引擎 doubao-seed-2.0-pro 等）
-  │  返回图片/视频/音频分析结果
+doubao-seed-2.0-pro（多模态模型）
+  │  返回图片/视频分析结果
   ▼
 文字结果回填给主模型
 ```
@@ -25,24 +25,42 @@ multimodal-proxy MCP（mcp/multimodal_proxy.py）
 
 | 部分 | 路径 | 作用 |
 |---|---|---|
-| MCP server | `mcp/multimodal_proxy.py` | 通用多模态代理，4 个工具 |
+| MCP server | `mcp/multimodal_proxy.py` | 通用多模态代理，2 个工具 |
 | Skill | `skills/multimodal-proxy/SKILL.md` | 激活规则与使用规范 |
 | 安装脚本 | `scripts/install.sh` | 配置 + keychain + 依赖 + 注册 |
 | 配置工具 | `scripts/configure.py` | 写配置文件 + 管理 key 存储 |
-| 插件清单 | `.codex-plugin/plugin.json` | Codex 插件元数据 |
-| MCP 声明 | `.mcp.json` | 声明 MCP server（install.sh 生成） |
 
 ## MCP 工具
 
-| 工具 | 能力 |
-|---|---|
-| `understand_image` | 图像分析 / OCR / 图表解读 / UI 审查 |
-| `understand_video` | 视频内容分析 |
-| `transcribe_audio` | 音频转字幕 / 语音转写 |
-| `generate_image` | 文字生成图片 |
+### process_multimodal（核心）
 
-工具共享参数：`model`（覆盖默认模型）、`provider`（覆盖默认 provider）。
-媒体输入支持本地文件路径（自动转 base64）或 http(s) URL。
+接收任意数量的图片/视频/音频 + 提示词，按顺序组装成多模态请求交给模型处理。
+
+```
+process_multimodal(
+  media: list[str],         # 媒体路径或URL列表（图片/视频/音频可混用）
+  prompts: list[str],       # 提示词列表（0~n条，作为任务指令）
+  model: str | None,        # 可选，覆盖默认模型
+  provider: str | None      # 可选，覆盖默认 provider
+)
+```
+
+用法：
+- 单图分析：`process_multimodal(["/img.png"], ["描述这张图"])`
+- 多图对比：`process_multimodal(["/a.png", "/b.png"], ["对比这两张图"])`
+- OCR 提取：`process_multimodal(["/scan.jpg"], ["提取图中所有文字"])`
+
+### generate_image
+
+根据文字提示词生成图片。需配置 image_generation 模型。
+
+## 模型能力（已验证 doubao-seed-2.0-pro, Coding Plan）
+
+| 媒体类型 | 支持 | 说明 |
+|---|---|---|
+| 图片 image_url | ✅ | 支持多图对比 |
+| 视频 video_url | ✅ | 需可访问 URL |
+| 音频 input_audio | ❌ | 该模型不支持，需换专用模型 |
 
 ## 安装
 
@@ -51,13 +69,8 @@ cd multimodal-proxy-plugin
 bash scripts/install.sh
 ```
 
-脚本会交互式引导输入：
-- provider 名称（如 `volcengine`）
-- base_url（如 `https://ark.cn-beijing.volces.com/api/coding/v3`）
-- api_key（mac 上优先存入 keychain）
-- 各能力模型名（vision 必填，如 `doubao-seed-2.0-pro`）
-
-完成后自动：创建 venv + 装依赖 → 写配置 → 生成 .mcp.json → 注册到 Codex。
+交互式引导输入 provider、base_url、api_key（mac 存 keychain）、模型名。
+默认值已针对火山引擎 Coding Plan 预填。
 
 ## 配置文件
 
@@ -72,9 +85,7 @@ bash scripts/install.sh
       "api_key_store": "keychain",
       "keychain_service": "multimodal-proxy",
       "keychain_account": "volcengine",
-      "models": {
-        "vision": "doubao-seed-2.0-pro"
-      }
+      "models": {"vision": "doubao-seed-2.0-pro"}
     }
   }
 }
@@ -84,25 +95,15 @@ api_key 存储优先级：mac keychain > 环境变量 > 配置文件明文。
 
 ## skill 激活规则
 
-1. 主模型是纯文本模型（glm-5.2、deepseek-v4 等）且有多模态需求 → **激活** MCP
-2. 主模型是多模态模型（GPT-4o、Claude、Gemini、doubao-vision 等）→ **不激活**，
-   除非用户显式要求外包
-3. 不确定主模型是否多模态 → 默认激活（纯文本模型直接处理媒体会失败）
+1. 主模型是纯文本模型且有多模态需求 → **激活** MCP
+2. 主模型是多模态模型 → **不激活**，除非用户显式要求外包
+3. 不确定 → 默认激活
 
 ## 测试
 
-以"主模型 glm-5.2 + 图像分析转火山引擎 doubao-seed-2.0-pro"为例：
-
-1. 运行 `bash scripts/install.sh`，配置 volcengine provider + ARK_API_KEY + vision 模型
-2. 在 Codex 中配置主模型为 glm-5.2（火山引擎）
-3. 新开线程，发送："分析这张图片 /tmp/multimodal_proxy_test.png"
-4. 预期：主模型调用 `understand_image` 工具 → doubao 返回图片描述
-
-直接验证 MCP（不依赖 Codex 主模型）：
-
 ```bash
-# 生成测试图
-python3 -c "..."  # 或用任意 png
-
-# 通过 stdio 调用 understand_image 验证
+# 端到端测试（需已配置）
+.venv/bin/python scripts/test_e2e.py
 ```
+
+验证场景：主模型 glm-5.2 + 图片分析转 doubao-seed-2.0-pro。
