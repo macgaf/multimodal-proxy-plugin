@@ -1,0 +1,34 @@
+{
+  "name": "multimodal-proxy-plugin",
+  "version": "0.1.0",
+  "description": "为纯文本主模型（如 glm-5.2、deepseek-v4）提供多模态外包能力：通过 MCP 把图像分析、OCR、视频分析、音频转字幕、图像生成转交给外部多模态模型处理。",
+  "author": {
+    "name": "local"
+  },
+  "license": "MIT",
+  "keywords": [
+    "multimodal",
+    "vision",
+    "ocr",
+    "audio",
+    "image-generation",
+    "mcp"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "多模态代理",
+    "shortDescription": "为纯文本模型外包图像/视频/音频处理",
+    "longDescription": "当主模型不支持多模态时，通过 MCP 工具把图像分析、OCR、视频分析、音频转字幕、图像生成外包给配置好的外部多模态模型（OpenAI 兼容 API，如火山引擎 doubao-vision）。附带的 skill 规范了激活规则：仅纯文本主模型且有多模态需求时才启用。",
+    "developerName": "local",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "defaultPrompt": [
+      "分析这张图片",
+      "提取图片中的文字(OCR)",
+      "把这段音频转成字幕"
+    ]
+  }
+}
