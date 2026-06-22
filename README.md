@@ -15,7 +15,7 @@
 multimodal-proxy MCP（mcp/multimodal_proxy.py）
   │  读配置 + keychain key → 调用外部多模态模型 API
   ▼
-外部多模态模型（火山引擎 doubao-Seed-2.0-pro 等）
+外部多模态模型（火山引擎 doubao-seed-2.0-pro 等）
   │  返回图片/视频/音频分析结果
   ▼
 文字结果回填给主模型
@@ -53,9 +53,9 @@ bash scripts/install.sh
 
 脚本会交互式引导输入：
 - provider 名称（如 `volcengine`）
-- base_url（如 `https://ark.cn-beijing.volces.com/api/v3`）
+- base_url（如 `https://ark.cn-beijing.volces.com/api/coding/v3`）
 - api_key（mac 上优先存入 keychain）
-- 各能力模型名（vision 必填，如 `doubao-Seed-2.0-pro`）
+- 各能力模型名（vision 必填，如 `doubao-seed-2.0-pro`）
 
 完成后自动：创建 venv + 装依赖 → 写配置 → 生成 .mcp.json → 注册到 Codex。
 
@@ -68,12 +68,12 @@ bash scripts/install.sh
   "default_provider": "volcengine",
   "providers": {
     "volcengine": {
-      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
       "api_key_store": "keychain",
       "keychain_service": "multimodal-proxy",
       "keychain_account": "volcengine",
       "models": {
-        "vision": "doubao-Seed-2.0-pro"
+        "vision": "doubao-seed-2.0-pro"
       }
     }
   }
@@ -91,7 +91,7 @@ api_key 存储优先级：mac keychain > 环境变量 > 配置文件明文。
 
 ## 测试
 
-以"主模型 glm-5.2 + 图像分析转火山引擎 doubao-Seed-2.0-pro"为例：
+以"主模型 glm-5.2 + 图像分析转火山引擎 doubao-seed-2.0-pro"为例：
 
 1. 运行 `bash scripts/install.sh`，配置 volcengine provider + ARK_API_KEY + vision 模型
 2. 在 Codex 中配置主模型为 glm-5.2（火山引擎）

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""multimodal-proxy 配置工具：写入配置文件 + 管理 api_key 存储（keychain/env/明文）。
+"""multimodal-proxy 配置工具
 
-被 install.sh 调用，也可独立运行。配置文件位于
-~/.config/multimodal-proxy/config.json。
+写入配置文件到 ~/.config/multimodal-proxy/config.json
+Mac 上支持将 api_key 存入 keychain（推荐）
 """
 from __future__ import annotations
 
@@ -20,7 +20,6 @@ CONFIG_DIR = Path(os.environ.get(
     str(Path.home() / ".config" / "multimodal-proxy"),
 ))
 CONFIG_PATH = CONFIG_DIR / "config.json"
-
 DEFAULT_SERVICE = "multimodal-proxy"
 
 
@@ -33,7 +32,6 @@ def load_config() -> dict:
 def save_config(cfg: dict) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-    # 配置文件可能含敏感引用，限制权限
     try:
         CONFIG_PATH.chmod(0o600)
     except OSError:
@@ -41,66 +39,64 @@ def save_config(cfg: dict) -> None:
 
 
 def keychain_store(service: str, account: str, key: str) -> bool:
-    """将 api_key 存入 macOS keychain；成功返回 True。"""
+    """将 api_key 存入 macOS keychain。成功返回 True"""
     if platform.system() != "Darwin":
         return False
     try:
         subprocess.run(
-            ["security", "add-generic-password", "-s", service, "-a", account,
-             "-w", key, "-U"],
-            check=True, capture_output=True,
+            ["security", "add-generic-password", "-s", service, "-a", account, "-w", key, "-U"],
+            capture_output=True, text=True, check=True,
         )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"⚠ keychain 存储失败: {e}", file=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"⚠ keychain 存储失败: {e.stderr}", file=sys.stderr)
         return False
 
 
-def prompt(name: str, default: str | None = None, secret: bool = False) -> str:
-    """交互式提示输入。"""
+def prompt(name: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default else ""
-    if secret:
-        # 隐藏输入（简单实现：不回显）
-        import getpass
-        val = getpass.getpass(f"{name}{suffix}: ").strip()
-    else:
-        val = input(f"{name}{suffix}: ").strip()
+    val = input(f"{name}{suffix}: ").strip()
     return val or (default or "")
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="配置 multimodal-proxy")
-    ap.add_argument("--provider", default=None, help="provider 名称，如 volcengine")
-    ap.add_argument("--base-url", default=None, help="OpenAI 兼容接入地址")
-    ap.add_argument("--api-key", default=None, help="api_key（不传则交互输入）")
-    ap.add_argument("--vision-model", default=None, help="图像理解模型")
-    ap.add_argument("--video-model", default=None, help="视频理解模型")
-    ap.add_argument("--audio-model", default=None, help="音频理解模型")
-    ap.add_argument("--image-gen-model", default=None, help="图像生成模型")
-    ap.add_argument("--keychain", action="store_true", help="mac 上将 api_key 存入 keychain")
-    ap.add_argument("--keychain-service", default=DEFAULT_SERVICE)
-    ap.add_argument("--keychain-account", default=None)
-    ap.add_argument("--api-key-env", default=None, help="改用环境变量读取 key 的变量名")
-    ap.add_argument("--set-default", action="store_true", help="设为默认 provider")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(description="配置 multimodal-proxy")
+    parser.add_argument("--provider", default="volcengine", help="provider 名称")
+    parser.add_argument("--base-url", default="https://ark.cn-beijing.volces.com/api/coding/v3", help="base_url")
+    parser.add_argument("--api-key", default=None, help="api_key（不传则交互式输入）")
+    parser.add_argument("--vision-model", default="doubao-seed-2.0-pro", help="视觉模型名")
+    parser.add_argument("--no-keychain", action="store_true", help="不使用 keychain，明文存配置")
+    parser.add_argument("--keychain-service", default=DEFAULT_SERVICE)
+    parser.add_argument("--keychain-account", default=None)
+    args = parser.parse_args()
 
-    interactive = not sys.stdin.isatty() is False and not any(
-        [args.provider, args.base_url]
-    )
-    # 交互模式补全缺失项
-    provider = args.provider or prompt("provider 名称", "volcengine")
-    base_url = args.base_url or prompt(
-        "base_url", "https://ark.cn-beijing.volces.com/api/v3"
-    )
-    account = args.keychain_account or provider
+    interactive = not sys.stdin.isatty() is False and not args.api_key
+
+    if interactive:
+        print("=" * 60)
+        print("  multimodal-proxy 配置工具")
+        print("=" * 60)
+        args.provider = prompt("provider 名称", args.provider)
+        args.base_url = prompt("base_url", args.base_url)
+        args.vision_model = prompt("视觉模型名称", args.vision_model)
 
     cfg = load_config()
-    prov = cfg.setdefault("providers", {}).setdefault(provider, {})
-    prov["base_url"] = base_url
+    prov = cfg["providers"].setdefault(args.provider, {})
+    prov["base_url"] = args.base_url
+    prov.setdefault("models", {})["vision"] = args.vision_model
 
-    # api_key 存储策略
-    if args.keychain and platform.system() == "Darwin":
-        key = args.api_key or prompt("api_key", secret=True)
+    account = args.keychain_account or args.provider
+
+    if interactive and platform.system() == "Darwin" and not args.no_keychain:
+        use_kc = prompt("是否将 api_key 存入 keychain？(Y/n)", "Y").lower()
+        if use_kc in ("y", "yes", "1"):
+            args.no_keychain = False
+        else:
+            args.no_keychain = True
+
+    use_kc = platform.system() == "Darwin" and not args.no_keychain
+    if use_kc:
+        key = args.api_key or (prompt("api_key", secret=True) if interactive else "")
         if not key:
             print("✗ api_key 不能为空", file=sys.stderr)
             return 1
@@ -109,42 +105,26 @@ def main() -> int:
             prov["keychain_service"] = args.keychain_service
             prov["keychain_account"] = account
             prov.pop("api_key", None)
-            prov.pop("api_key_env", None)
             print(f"✓ api_key 已存入 keychain (service={args.keychain_service}, account={account})")
         else:
-            print("⚠ keychain 不可用，回退到环境变量方式", file=sys.stderr)
-            prov["api_key_store"] = "env"
-            prov["api_key_env"] = args.api_key_env or f"{provider.upper()}_API_KEY"
+            print("⚠ keychain 不可用，回退到明文存储", file=sys.stderr)
+            prov["api_key_store"] = "plaintext"
             prov["api_key"] = key
-    elif args.api_key_env:
-        prov["api_key_store"] = "env"
-        prov["api_key_env"] = args.api_key_env
     else:
-        key = args.api_key or prompt("api_key", secret=True)
+        key = args.api_key or (prompt("api_key", secret=True) if interactive else "")
+        if not key:
+            print("✗ api_key 不能为空", file=sys.stderr)
+            return 1
         prov["api_key_store"] = "plaintext"
         prov["api_key"] = key
-        print("⚠ api_key 以明文存入配置文件，建议改用 --keychain 或 --api-key-env", file=sys.stderr)
+        if interactive:
+            print("⚠ api_key 以明文存入配置文件", file=sys.stderr)
 
-    # 模型配置（按能力）
-    models = prov.setdefault("models", {})
-    caps = {
-        "vision": (args.vision_model, "图像理解模型", "doubao-Seed-2.0-pro"),
-        "video": (args.video_model, "视频理解模型", ""),
-        "audio": (args.audio_model, "音频理解模型", ""),
-        "image_generation": (args.image_gen_model, "图像生成模型", ""),
-    }
-    for cap, (val, label, default) in caps.items():
-        m = val or (prompt(label, default) if interactive else val or default)
-        if m:
-            models[cap] = m
-
-    if args.set_default or "default_provider" not in cfg:
-        cfg["default_provider"] = provider
+    if "default_provider" not in cfg:
+        cfg["default_provider"] = args.provider
 
     save_config(cfg)
-    print(f"✓ 配置已写入 {CONFIG_PATH}")
-    print(f"  provider={provider}  base_url={base_url}")
-    print(f"  models={prov.get('models', {})}")
+    print(f"✓ 配置已写入: {CONFIG_PATH}")
     return 0
 
 
