@@ -5,13 +5,14 @@
 通用多模态代理：通过火山引擎 Coding Plan API 将多模态任务外包给支持视觉的模型
 （如 doubao-seed-2.0-pro）。专供主模型为纯文本模型（glm-5.2/deepseek-v4 等）时使用。
 
-核心设计：单个通用工具 process_multimodal，接收任意数量的图片/视频/音频 + 提示词，
-按顺序组装成多模态 content，交给配置好的模型处理。
+核心设计：
+  - save_clipboard_to_file：读系统剪贴板，图片落盘返回路径（绕过 Ctrl-V 硬拦截）
+  - process_multimodal：接收任意数量的图片/视频/音频 + 提示词，交给模型处理
 
 已验证的模型能力（doubao-seed-2.0-pro, Coding Plan）：
   - 图片 image_url      ✅ 支持（多图对比）
   - 视频 video_url      ✅ 类型被接受（需可访问 URL）
-  - 音频 input_audio    ⚠️ doubao-seed-2-0-mini/lite 260428 元数据标注支持 audio，
+  - 音频 input_audio    ⚠️ 需在火山方舟控制台确认音频能力开通状态
 
 配置文件：~/.config/multimodal-proxy/config.json
 """
@@ -22,7 +23,10 @@ import json
 import mimetypes
 import os
 import platform
+import shutil
 import subprocess
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +38,12 @@ CONFIG_DIR = Path(os.environ.get(
     str(Path.home() / ".config" / "multimodal-proxy"),
 ))
 CONFIG_PATH = CONFIG_DIR / "config.json"
+
+# 剪贴板临时文件目录
+CLIPBOARD_TMP_DIR = Path(os.environ.get(
+    "MULTIMODAL_PROXY_CLIP_DIR",
+    tempfile.gettempdir(),
+))
 
 mcp = FastMCP("multimodal-proxy")
 
@@ -48,12 +58,23 @@ def load_config() -> dict[str, Any]:
 
 
 def resolve_api_key(cfg: dict[str, Any], provider: str) -> str:
-    """按优先级解析 api_key：keychain > 环境变量 > 明文。"""
+    """按 api_key_store 字段指定的方式获取 api_key。
+
+    支持三种存储方式（严格匹配，不回退）：
+      - keychain  ：从 macOS 钥匙串读取（仅 macOS）
+      - env       ：从环境变量读取（变量名记录在 api_key_env 字段）
+      - plaintext ：从配置文件的 api_key 字段读取
+    """
     p = cfg["providers"][provider]
     store = p.get("api_key_store", "plaintext")
 
-    # 1. keychain（mac）
-    if store == "keychain" and platform.system() == "Darwin":
+    if store == "keychain":
+        # macOS keychain
+        if platform.system() != "Darwin":
+            raise RuntimeError(
+                "api_key_store=keychain 但当前平台非 macOS。"
+                "请重新运行：bash scripts/install.sh 选择其他存储方式。"
+            )
         try:
             r = subprocess.run(
                 ["security", "find-generic-password",
@@ -66,20 +87,35 @@ def resolve_api_key(cfg: dict[str, Any], provider: str) -> str:
                 return key
         except subprocess.CalledProcessError:
             pass
-        raise RuntimeError(f"keychain 读取失败，请重新运行：bash scripts/install.sh")
+        raise RuntimeError(
+            f"keychain 读取失败 (service={p.get('keychain_service')}, "
+            f"account={p.get('keychain_account')})，请重新运行：bash scripts/install.sh"
+        )
 
-    # 2. 环境变量
-    if p.get("api_key_env"):
-        key = os.environ.get(p["api_key_env"])
-        if key:
-            return key
-
-    # 3. 明文
-    key = p.get("api_key")
-    if key:
+    elif store == "env":
+        # 环境变量
+        env_var = p.get("api_key_env")
+        if not env_var:
+            raise RuntimeError(
+                "api_key_store=env 但未配置 api_key_env 字段。"
+                "请重新运行：bash scripts/install.sh"
+            )
+        key = os.environ.get(env_var)
+        if not key:
+            raise RuntimeError(
+                f"环境变量 {env_var} 未设置。请先设置：export {env_var}='你的-api-key'"
+            )
         return key
 
-    raise RuntimeError("无法获取 api_key，请重新运行：bash scripts/install.sh")
+    else:
+        # plaintext（默认）
+        key = p.get("api_key")
+        if not key:
+            raise RuntimeError(
+                "配置文件中未找到 api_key（api_key_store=plaintext）。"
+                "请重新运行：bash scripts/install.sh"
+            )
+        return key
 
 
 def get_client(cfg: dict[str, Any], provider: str | None = None) -> tuple[str, OpenAI, dict]:
@@ -108,7 +144,6 @@ def to_data_url(path_or_url: str) -> str:
 def media_type_of(path_or_url: str) -> str:
     """根据扩展名/MIME 判断媒体类型：image / video / audio。"""
     if path_or_url.startswith(("http://", "https://")):
-        # URL 按扩展名判断
         low = path_or_url.lower().split("?")[0]
     else:
         low = str(path_or_url).lower()
@@ -118,13 +153,12 @@ def media_type_of(path_or_url: str) -> str:
         return "video"
     if any(low.endswith(e) for e in (".mp3", ".wav", ".m4a", ".flac", ".aac", ".ogg", ".opus")):
         return "audio"
-    # 兜底：用 MIME 猜
     mime, _ = mimetypes.guess_type(low)
     if mime:
         if mime.startswith("image/"): return "image"
         if mime.startswith("video/"): return "video"
         if mime.startswith("audio/"): return "audio"
-    return "image"  # 默认当图片
+    return "image"
 
 
 def build_content(media: list[str], prompts: list[str], provider_cfg: dict) -> list[dict]:
@@ -133,11 +167,9 @@ def build_content(media: list[str], prompts: list[str], provider_cfg: dict) -> l
     约定：prompts 在前（作为任务指令），media 按顺序在后。
     """
     content: list[dict[str, Any]] = []
-    # 提示词部分
     for p in prompts:
         if p.strip():
             content.append({"type": "text", "text": p})
-    # 媒体部分
     ctypes = provider_cfg.get("content_types", {})
     for m in media:
         url = to_data_url(m)
@@ -149,9 +181,6 @@ def build_content(media: list[str], prompts: list[str], provider_cfg: dict) -> l
             content.append({"type": ctypes.get("video", "video_url"),
                             "video_url": {"url": url}})
         elif mtype == "audio":
-            # OpenAI 标准 input_audio 格式：{data: base64, format: wav/mp3}
-            # 注意：当前 Coding Plan key 实测音频被拒（即使 mini/lite 260428 元数据
-            # 标注支持 audio）。需在火山方舟控制台确认音频能力开通状态。
             data_part = url.split(",", 1)[1] if url.startswith("data:") else url
             fmt = "wav"
             if url.startswith("data:"):
@@ -160,6 +189,219 @@ def build_content(media: list[str], prompts: list[str], provider_cfg: dict) -> l
                             "input_audio": {"data": data_part, "format": fmt}})
     return content
 
+
+# ─── 剪贴板工具（跨平台：macOS / Windows / Linux） ───
+
+
+def _read_clipboard_macos(dest_path: str) -> str:
+    """macOS：通过 osascript 读剪贴板，返回 "image:path" / "text:内容" / "empty:"。"""
+    script = r"""
+on run
+    try
+        set pngData to (get the clipboard as «class PNGf»)
+        set fp to open for access POSIX file "%s" with write permission
+        set eof of fp to 0
+        write pngData to fp
+        close access fp
+        return "image:" & "%s"
+    on error
+        try
+            set txt to (get the clipboard as text)
+            if txt is "" then
+                return "empty:"
+            end if
+            return "text:" & txt
+        on error
+            return "empty:"
+        end try
+    end try
+end run
+""" % (dest_path, dest_path)
+    r = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True, text=True, timeout=10,
+    )
+    out = r.stdout.strip()
+    if out:
+        return out
+    return "empty:"
+
+
+def _read_clipboard_windows(dest_path: str) -> str:
+    """Windows：通过 PowerShell 读剪贴板，返回 "image:path" / "text:内容" / "empty:"。"""
+    # PowerShell 路径需要用反斜杠
+    win_path = dest_path.replace("/", "\\")
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "if ([System.Windows.Forms.Clipboard]::ContainsImage()) { "
+        f"$img = [System.Windows.Forms.Clipboard]::GetImage(); "
+        f"$img.Save('{win_path}', [System.Drawing.Imaging.ImageFormat]::Png); "
+        f"Write-Output 'image:{dest_path}' "
+        "} elseif ([System.Windows.Forms.Clipboard]::ContainsText()) { "
+        "$txt = [System.Windows.Forms.Clipboard]::GetText(); "
+        "Write-Output ('text:' + $txt) "
+        "} else { "
+        "Write-Output 'empty:' "
+        "}"
+    )
+    r = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-STA", "-Command", script],
+        capture_output=True, text=True, timeout=15,
+    )
+    out = r.stdout.strip()
+    if out:
+        return out
+    return "empty:"
+
+
+def _read_clipboard_linux(dest_path: str) -> str:
+    """Linux：通过 wl-paste（Wayland）或 xclip（X11）读剪贴板。
+
+    返回 "image:path" / "text:内容" / "empty:"。
+    """
+    # 优先 Wayland（wl-paste），其次 X11（xclip）
+    if shutil.which("wl-paste"):
+        return _read_clipboard_wlpaste(dest_path)
+    if shutil.which("xclip"):
+        return _read_clipboard_xclip(dest_path)
+    return ("error:未找到 wl-paste 或 xclip。"
+            "Wayland 请安装 wl-clipboard，X11 请安装 xclip。")
+
+
+def _read_clipboard_wlpaste(dest_path: str) -> str:
+    """Wayland：用 wl-paste 读剪贴板。"""
+    # 先列出剪贴板可用类型
+    r_types = subprocess.run(
+        ["wl-paste", "-l"],
+        capture_output=True, text=True, timeout=10,
+    )
+    types = r_types.stdout.strip().lower()
+
+    # 检查是否有图片类型
+    if any(t in types for t in ("image/png", "image/jpeg", "image/jpg")):
+        # 确定具体 MIME 类型
+        mime = "image/png"
+        if "image/jpeg" in types or "image/jpg" in types:
+            mime = "image/jpeg"
+        r = subprocess.run(
+            ["wl-paste", "-t", mime],
+            capture_output=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout:
+            Path(dest_path).write_bytes(r.stdout)
+            return f"image:{dest_path}"
+
+    # 尝试获取文本
+    r = subprocess.run(
+        ["wl-paste"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if r.returncode == 0 and r.stdout:
+        return f"text:{r.stdout}"
+    return "empty:"
+
+
+def _read_clipboard_xclip(dest_path: str) -> str:
+    """X11：用 xclip 读剪贴板。"""
+    # 先列出剪贴板可用类型
+    r_types = subprocess.run(
+        ["xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"],
+        capture_output=True, text=True, timeout=10,
+    )
+    types = r_types.stdout.strip().lower()
+
+    # 检查是否有图片类型
+    if any(t in types for t in ("image/png", "image/jpeg", "image/jpg")):
+        mime = "image/png"
+        if "image/jpeg" in types or "image/jpg" in types:
+            mime = "image/jpeg"
+        r = subprocess.run(
+            ["xclip", "-selection", "clipboard", "-t", mime, "-o"],
+            capture_output=True, timeout=10,
+        )
+        if r.returncode == 0 and r.stdout:
+            Path(dest_path).write_bytes(r.stdout)
+            return f"image:{dest_path}"
+
+    # 尝试获取文本
+    r = subprocess.run(
+        ["xclip", "-selection", "clipboard", "-o"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if r.returncode == 0 and r.stdout:
+        return f"text:{r.stdout}"
+    return "empty:"
+
+
+def _read_clipboard(dest_path: str) -> str:
+    """跨平台读剪贴板，返回 "image:path" / "text:内容" / "empty:" / "error:消息"。
+
+    自动检测平台并分派到对应实现：
+      - macOS：osascript（AppleScript）
+      - Windows：PowerShell + System.Windows.Forms.Clipboard
+      - Linux：wl-paste（Wayland）或 xclip（X11）
+    """
+    system = platform.system()
+    if system == "Darwin":
+        return _read_clipboard_macos(dest_path)
+    elif system == "Windows":
+        return _read_clipboard_windows(dest_path)
+    elif system == "Linux":
+        return _read_clipboard_linux(dest_path)
+    else:
+        return f"error:不支持的平台 {system}"
+
+
+@mcp.tool()
+def save_clipboard_to_file() -> str:
+    """读取系统剪贴板内容并保存为临时文件（支持 macOS / Windows / Linux）。
+
+    用于绕过 Codex 对纯文本模型的图片输入硬拦截：用户 Ctrl-V 粘贴截图会被拦截，
+    但截图仍在系统剪贴板中。本工具从剪贴板读取图片数据，保存为临时 PNG 文件，
+    返回文件路径，供后续 process_multimodal 工具分析。
+
+    跨平台支持：
+      - macOS：osascript（AppleScript 读 «class PNGf»）
+      - Windows：PowerShell + System.Windows.Forms.Clipboard
+      - Linux：wl-paste（Wayland）或 xclip（X11）
+
+    工作流：
+      1. 用户先截图到剪贴板
+         - macOS：Ctrl-Shift-Cmd-4
+         - Windows：Win-Shift-S（截图工具）
+         - Linux：取决于桌面环境（如 gnome-screenshot -c）
+      2. 在 Codex 里输入文本指令，如"分析一下我刚截的屏"
+      3. 主模型调用本工具 → 剪贴板图片落盘 → 返回路径
+      4. 主模型调用 process_multimodal([路径], [提示词]) 完成分析
+
+    返回值：
+      - 图片：返回保存的文件路径（如 /tmp/mmp-clip-1234567890.png）
+      - 文本：返回 "clipboard_text: <文本内容>"（剪贴板里是文字而非图片）
+      - 空：返回 "剪贴板为空或不含图片数据"
+      - 错误：返回 "error: <错误描述>"
+    """
+    ts = int(time.time() * 1000)
+    dest = str(CLIPBOARD_TMP_DIR / f"mmp-clip-{ts}.png")
+
+    result = _read_clipboard(dest)
+
+    if result.startswith("image:"):
+        path = result.split(":", 1)[1]
+        if Path(path).exists() and Path(path).stat().st_size > 0:
+            return path
+        return "错误：剪贴板图片保存失败"
+    elif result.startswith("text:"):
+        text = result.split(":", 1)[1]
+        return f"clipboard_text: {text}"
+    elif result.startswith("error:"):
+        return result
+    else:
+        return ("剪贴板为空或不含图片数据。请先截图到剪贴板"
+                "（macOS: Ctrl-Shift-Cmd-4, Windows: Win-Shift-S, Linux: 截图工具复制到剪贴板），"
+                "再重试。")
+
+
+# ─── 多模态处理工具 ───
 
 @mcp.tool()
 def process_multimodal(

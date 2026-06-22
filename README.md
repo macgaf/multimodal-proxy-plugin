@@ -10,10 +10,16 @@
 
 ```
 用户（纯文本主模型 glm-5.2）
-  │  遇到"分析这张图" → skill 判断主模型是纯文本 → 调用 process_multimodal
-  ▼
+  │
+  ├─ 场景A：用户给出图片文件路径
+  │    → skill 判断主模型是纯文本 → 调用 process_multimodal
+  │
+  └─ 场景B：用户说"分析一下截屏"（Ctrl-V 粘贴被 Codex 硬拦截）
+       → skill 判断主模型是纯文本 → 先调用 save_clipboard_to_file
+       → 剪贴板图片落盘为临时文件 → 再调用 process_multimodal
+       ▼
 multimodal-proxy MCP
-  │  读配置 + keychain key → 调用火山引擎 doubao-seed-2.0-pro
+  │  读配置 → 按 api_key_store 获取 key → 调用 doubao-seed-2.0-pro
   ▼
 doubao-seed-2.0-pro（多模态模型）
   │  返回图片/视频分析结果
@@ -25,12 +31,34 @@ doubao-seed-2.0-pro（多模态模型）
 
 | 部分 | 路径 | 作用 |
 |---|---|---|
-| MCP server | `mcp/multimodal_proxy.py` | 通用多模态代理，2 个工具 |
+| MCP server | `mcp/multimodal_proxy.py` | 通用多模态代理，3 个工具 |
 | Skill | `skills/multimodal-proxy/SKILL.md` | 激活规则与使用规范 |
-| 安装脚本 | `scripts/install.sh` | 配置 + keychain + 依赖 + 注册 |
-| 配置工具 | `scripts/configure.py` | 写配置文件 + 管理 key 存储 |
+| 安装脚本 | `scripts/install.sh` | 虚拟环境 + 依赖 + 配置 + 注册 |
+| 配置工具 | `scripts/configure.py` | 写配置文件 + 管理 api_key 存储方式 |
 
 ## MCP 工具
+
+### save_clipboard_to_file
+
+读取系统剪贴板内容，如果是图片则保存为临时 PNG 文件并返回路径。
+
+**用途**：绕过 Codex 对纯文本模型的图片输入硬拦截。用户 Ctrl-V 粘贴截图会被拦截，
+但截图仍在系统剪贴板中。本工具从剪贴板读取图片，落盘为文件，返回路径供后续分析。
+
+**跨平台支持**：
+
+| 平台 | 实现方式 | 依赖 |
+|---|---|---|
+| macOS | osascript（AppleScript 读 `«class PNGf»`） | 系统自带 |
+| Windows | PowerShell + `System.Windows.Forms.Clipboard` | 系统自带 |
+| Linux (Wayland) | `wl-paste` | 需安装 `wl-clipboard` |
+| Linux (X11) | `xclip` | 需安装 `xclip` |
+
+工作流：
+1. 用户先截图到剪贴板（macOS: `Ctrl-Shift-Cmd-4`，Windows: `Win-Shift-S`，Linux: 桌面截图工具）
+2. 在 Codex 里输入文本指令，如"分析一下我刚截的屏"（不要 Ctrl-V 粘贴图片）
+3. 主模型调用本工具 → 剪贴板图片落盘 → 返回路径
+4. 主模型调用 `process_multimodal([路径], [提示词])` 完成分析
 
 ### process_multimodal（核心）
 
@@ -49,6 +77,7 @@ process_multimodal(
 - 单图分析：`process_multimodal(["/img.png"], ["描述这张图"])`
 - 多图对比：`process_multimodal(["/a.png", "/b.png"], ["对比这两张图"])`
 - OCR 提取：`process_multimodal(["/scan.jpg"], ["提取图中所有文字"])`
+- 截屏分析：先 `save_clipboard_to_file()` 拿到路径，再 `process_multimodal([路径], ["分析"])`
 
 ### generate_image
 
@@ -69,12 +98,22 @@ cd multimodal-proxy-plugin
 bash scripts/install.sh
 ```
 
-交互式引导输入 provider、base_url、api_key（mac 存 keychain）、模型名。
-默认值已针对火山引擎 Coding Plan 预填。
+交互式引导输入 provider、base_url、模型名，以及 **api_key 存储方式（三选一）**：
+
+| 选项 | 方式 | 说明 |
+|---|---|---|
+| 1 | keychain | 存入 macOS 钥匙串，配置文件无明文（推荐，仅 macOS） |
+| 2 | plaintext | 明文写入配置文件 |
+| 3 | env | 从环境变量读取，配置文件只记录变量名 |
+
+mac 默认推荐 keychain，其他平台默认 plaintext。默认值已针对火山引擎 Coding Plan 预填。
 
 ## 配置文件
 
-`~/.config/multimodal-proxy/config.json`：
+`~/.config/multimodal-proxy/config.json`，api_key 有三种存储方式，由 `api_key_store`
+字段指定，严格匹配不回退：
+
+### keychain（仅 macOS）
 
 ```json
 {
@@ -91,7 +130,44 @@ bash scripts/install.sh
 }
 ```
 
-api_key 存储优先级：mac keychain > 环境变量 > 配置文件明文。
+### plaintext
+
+```json
+{
+  "default_provider": "volcengine",
+  "providers": {
+    "volcengine": {
+      "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+      "api_key_store": "plaintext",
+      "api_key": "ark-xxxxxxxxxxxx",
+      "models": {"vision": "doubao-seed-2.0-pro"}
+    }
+  }
+}
+```
+
+### env
+
+```json
+{
+  "default_provider": "volcengine",
+  "providers": {
+    "volcengine": {
+      "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+      "api_key_store": "env",
+      "api_key_env": "MULTIMODAL_PROXY_API_KEY_VOLCENGINE",
+      "models": {"vision": "doubao-seed-2.0-pro"}
+    }
+  }
+}
+```
+
+使用 env 模式时，需在运行 Codex 前设置环境变量：
+
+```bash
+export MULTIMODAL_PROXY_API_KEY_VOLCENGINE='ark-xxxxxxxxxxxx'
+# 建议写入 ~/.zshrc 或 ~/.bashrc
+```
 
 ## skill 激活规则
 

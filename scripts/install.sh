@@ -38,30 +38,66 @@ BASE_URL="${BASE_URL:-https://ark.cn-beijing.volces.com/api/coding/v3}"
 read -rp "图像理解模型 (vision) [doubao-seed-2.0-pro]: " VISION_MODEL
 VISION_MODEL="${VISION_MODEL:-doubao-seed-2.0-pro}"
 
-# api_key 存储方式（mac 默认 keychain）
-KC_FLAG=""
-if [ "$(uname)" = "Darwin" ]; then
-  read -rp "检测到 macOS，将 api_key 存入 keychain？(Y/n): " kc
-  case "${kc:-Y}" in
-    [Yy]*) echo "→ 将使用 keychain 存储 api_key";;
-    *) KC_FLAG="--no-keychain"; echo "→ api_key 将以明文存入配置文件（不推荐）";;
-  esac
-fi
-
 read -rp "视频理解模型 (video，可留空): " VIDEO_MODEL
 read -rp "音频理解模型 (audio，可留空): " AUDIO_MODEL
 read -rp "图像生成模型 (image_generation，可留空): " IMAGE_GEN_MODEL
 
-# 4. 写入配置
+# 4. api_key 存储方式（三选一）
+echo ""
+echo "── api_key 存储方式 ──"
+echo "  1) keychain  —— 存入 macOS 钥匙串，配置文件无明文（推荐，仅 macOS）"
+echo "  2) plaintext —— 明文写入配置文件"
+echo "  3) env       —— 从环境变量读取，配置文件只记录变量名"
+
+IS_MAC="false"
+[ "$(uname)" = "Darwin" ] && IS_MAC="true"
+
+DEFAULT_KEY_STORE="2"
+if [ "$IS_MAC" = "true" ]; then
+  DEFAULT_KEY_STORE="1"
+fi
+
+while true; do
+  read -rp "选择 (1/2/3) [$DEFAULT_KEY_STORE]: " KEY_CHOICE
+  KEY_CHOICE="${KEY_CHOICE:-$DEFAULT_KEY_STORE}"
+  case "$KEY_CHOICE" in
+    1)
+      if [ "$IS_MAC" != "true" ]; then
+        echo "  ✗ 非 macOS 平台不支持 keychain，请选 2 或 3"
+        continue
+      fi
+      KEY_STORE="keychain"
+      break
+      ;;
+    2) KEY_STORE="plaintext"; break ;;
+    3) KEY_STORE="env"; break ;;
+    *) echo "  无效选择，请输入 1、2 或 3" ;;
+  esac
+done
+
+# 5. 根据存储方式收集 api_key / 环境变量名
+CONFIG_ARGS=(--provider "$PROVIDER" --base-url "$BASE_URL" --vision-model "$VISION_MODEL" --key-store "$KEY_STORE" --keychain-account "$PROVIDER")
+
+if [ "$KEY_STORE" = "env" ]; then
+  DEFAULT_ENV_NAME="MULTIMODAL_PROXY_API_KEY_${PROVIDER^^}"
+  read -rp "环境变量名 [$DEFAULT_ENV_NAME]: " ENV_NAME
+  ENV_NAME="${ENV_NAME:-$DEFAULT_ENV_NAME}"
+  CONFIG_ARGS+=(--api-key-env "$ENV_NAME")
+  echo "→ 配置文件将记录环境变量名: $ENV_NAME"
+  echo "  请在运行 Codex 前设置该环境变量："
+  echo "    export $ENV_NAME='你的-api-key'"
+  echo "  （建议写入 ~/.zshrc 或 ~/.bashrc）"
+else
+  read -rsp "api_key: " API_KEY; echo
+  [ -z "$API_KEY" ] && { echo "✗ api_key 不能为空"; exit 1; }
+  CONFIG_ARGS+=(--api-key "$API_KEY")
+fi
+
+# 6. 写入配置
 echo "→ 写入配置"
-CONFIG_ARGS=(--provider "$PROVIDER" --base-url "$BASE_URL" --vision-model "$VISION_MODEL" --keychain-account "$PROVIDER")
-[ -n "$KC_FLAG" ] && CONFIG_ARGS+=("$KC_FLAG")
+"$PY" "$PLUGIN_ROOT/scripts/configure.py" "${CONFIG_ARGS[@]}"
 
-read -rsp "api_key: " API_KEY; echo
-[ -z "$API_KEY" ] && { echo "✗ api_key 不能为空"; exit 1; }
-"$PY" "$PLUGIN_ROOT/scripts/configure.py" "${CONFIG_ARGS[@]}" --api-key "$API_KEY"
-
-# 5. 生成 .mcp.json（注入本机绝对路径）
+# 7. 生成 .mcp.json（注入本机绝对路径）
 echo "→ 生成 .mcp.json"
 cat > "$PLUGIN_ROOT/.mcp.json" <<MCPJSON
 {
@@ -76,7 +112,7 @@ cat > "$PLUGIN_ROOT/.mcp.json" <<MCPJSON
 MCPJSON
 echo "✓ .mcp.json 已生成"
 
-# 6. 注册到 Codex
+# 8. 注册到 Codex
 echo "→ 注册插件到 Codex"
 mkdir -p "$HOME/plugins" "$HOME/.agents/plugins"
 ln -sfn "$PLUGIN_ROOT" "$HOME/plugins/multimodal-proxy-plugin"
