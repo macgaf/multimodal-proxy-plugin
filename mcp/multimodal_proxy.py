@@ -11,7 +11,7 @@
 已验证的模型能力（doubao-seed-2.0-pro, Coding Plan）：
   - 图片 image_url      ✅ 支持（多图对比）
   - 视频 video_url      ✅ 类型被接受（需可访问 URL）
-  - 音频 input_audio    ❌ 该模型不支持（需换专用模型）
+  - 音频 input_audio    ⚠️ doubao-seed-2-0-mini/lite 260428 元数据标注支持 audio，
 
 配置文件：~/.config/multimodal-proxy/config.json
 """
@@ -149,7 +149,9 @@ def build_content(media: list[str], prompts: list[str], provider_cfg: dict) -> l
             content.append({"type": ctypes.get("video", "video_url"),
                             "video_url": {"url": url}})
         elif mtype == "audio":
-            # OpenAI 标准：input_audio 用 data + format
+            # OpenAI 标准 input_audio 格式：{data: base64, format: wav/mp3}
+            # 注意：当前 Coding Plan key 实测音频被拒（即使 mini/lite 260428 元数据
+            # 标注支持 audio）。需在火山方舟控制台确认音频能力开通状态。
             data_part = url.split(",", 1)[1] if url.startswith("data:") else url
             fmt = "wav"
             if url.startswith("data:"):

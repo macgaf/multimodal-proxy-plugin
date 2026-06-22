@@ -60,7 +60,7 @@ process_multimodal(
 |---|---|---|
 | 图片 image_url | ✅ | 支持多图对比 |
 | 视频 video_url | ✅ | 需可访问 URL |
-| 音频 input_audio | ❌ | 该模型不支持，需换专用模型 |
+| 音频 input_audio | ⚠️ | doubao-seed-2-0-pro 不支持；mini/lite 260428 元数据标注支持但 Coding Plan key 实测被拒，需控制台确认开通 |
 
 ## 安装
 
