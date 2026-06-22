@@ -30,6 +30,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import keyring
 from mcp.server.fastmcp import FastMCP
 from openai import OpenAI
 
@@ -75,18 +76,12 @@ def resolve_api_key(cfg: dict[str, Any], provider: str) -> str:
                 "api_key_store=keychain 但当前平台非 macOS。"
                 "请重新运行：bash scripts/install.sh 选择其他存储方式。"
             )
-        try:
-            r = subprocess.run(
-                ["security", "find-generic-password",
-                 "-s", p.get("keychain_service", "multimodal-proxy"),
-                 "-a", p.get("keychain_account", provider), "-w"],
-                capture_output=True, text=True, check=True,
-            )
-            key = r.stdout.strip()
-            if key:
-                return key
-        except subprocess.CalledProcessError:
-            pass
+        key = keyring.get_password(
+            p.get("keychain_service", "multimodal-proxy"),
+            p.get("keychain_account", provider),
+        )
+        if key:
+            return key
         raise RuntimeError(
             f"keychain 读取失败 (service={p.get('keychain_service')}, "
             f"account={p.get('keychain_account')})，请重新运行：bash scripts/install.sh"

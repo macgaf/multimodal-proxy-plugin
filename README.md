@@ -103,10 +103,10 @@ bash scripts/install.sh
 | 选项 | 方式 | 说明 |
 |---|---|---|
 | 1 | keychain | 存入 macOS 钥匙串，配置文件无明文（推荐，仅 macOS） |
-| 2 | plaintext | 明文写入配置文件 |
+| 2 | plaintext | 明文写入配置文件（仅兼容场景使用） |
 | 3 | env | 从环境变量读取，配置文件只记录变量名 |
 
-mac 默认推荐 keychain，其他平台默认 plaintext。默认值已针对火山引擎 Coding Plan 预填。
+macOS 默认使用 keychain，其他平台默认使用 env；plaintext 仅在明确选择时启用。安装脚本通过标准输入传递密钥，并通过系统钥匙串接口保存，不会将密钥置于进程参数中。默认值已针对火山引擎 Coding Plan 预填。
 
 ## 配置文件
 
@@ -131,6 +131,8 @@ mac 默认推荐 keychain，其他平台默认 plaintext。默认值已针对火
 ```
 
 ### plaintext
+
+仅在无法使用 keychain 或环境变量时使用。配置文件权限会设为仅当前用户可读写（`0600`），但仍不建议将该文件放入同步盘、备份文件或版本控制。
 
 ```json
 {

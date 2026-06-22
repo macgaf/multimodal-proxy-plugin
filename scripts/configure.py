@@ -15,9 +15,10 @@ import getpass
 import json
 import os
 import platform
-import subprocess
 import sys
 from pathlib import Path
+
+import keyring
 
 CONFIG_DIR = Path(os.environ.get(
     "MULTIMODAL_PROXY_CONFIG_DIR",
@@ -50,13 +51,10 @@ def keychain_store(service: str, account: str, key: str) -> bool:
     if platform.system() != "Darwin":
         return False
     try:
-        subprocess.run(
-            ["security", "add-generic-password", "-s", service, "-a", account, "-w", key, "-U"],
-            capture_output=True, text=True, check=True,
-        )
+        keyring.set_password(service, account, key)
         return True
-    except subprocess.CalledProcessError as e:
-        print(f"⚠ keychain 存储失败: {e.stderr}", file=sys.stderr)
+    except keyring.errors.KeyringError as e:
+        print(f"⚠ keychain 存储失败: {e}", file=sys.stderr)
         return False
 
 
@@ -64,10 +62,10 @@ def keychain_delete(service: str, account: str) -> None:
     """从 macOS keychain 删除旧 key（忽略不存在的情况）。"""
     if platform.system() != "Darwin":
         return
-    subprocess.run(
-        ["security", "delete-generic-password", "-s", service, "-a", account],
-        capture_output=True, text=True,
-    )
+    try:
+        keyring.delete_password(service, account)
+    except keyring.errors.PasswordDeleteError:
+        pass
 
 
 def prompt(name: str, default: str | None = None) -> str:
@@ -81,11 +79,24 @@ def prompt_secret(name: str) -> str:
     return getpass.getpass(f"{name}: ").strip()
 
 
+def read_api_key(args: argparse.Namespace, interactive: bool) -> str:
+    """从命令行、标准输入或交互终端读取密钥。"""
+    if args.api_key_stdin:
+        return sys.stdin.buffer.read().decode("utf-8").strip()
+    if args.api_key is not None:
+        return args.api_key.strip()
+    if interactive:
+        return prompt_secret("api_key")
+    return ""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="配置 multimodal-proxy")
     parser.add_argument("--provider", default="volcengine", help="provider 名称")
     parser.add_argument("--base-url", default="https://ark.cn-beijing.volces.com/api/coding/v3", help="base_url")
-    parser.add_argument("--api-key", default=None, help="api_key（不传则交互式输入）")
+    key_input = parser.add_mutually_exclusive_group()
+    key_input.add_argument("--api-key", default=None, help="api_key（不推荐；会暴露在进程参数中）")
+    key_input.add_argument("--api-key-stdin", action="store_true", help="从标准输入读取 api_key")
     parser.add_argument("--vision-model", default="doubao-seed-2.0-pro", help="视觉模型名")
     parser.add_argument(
         "--key-store",
@@ -98,7 +109,7 @@ def main() -> int:
     parser.add_argument("--api-key-env", default=None, help="环境变量名（--key-store=env 时使用）")
     args = parser.parse_args()
 
-    interactive = sys.stdin.isatty() and not args.api_key
+    interactive = sys.stdin.isatty() and args.api_key is None and not args.api_key_stdin
 
     if interactive:
         print("=" * 60)
@@ -127,7 +138,7 @@ def main() -> int:
         print("  2) plaintext —— 明文写入配置文件")
         print("  3) env       —— 从环境变量读取，配置文件只记录变量名")
         choices = {"1": "keychain", "2": "plaintext", "3": "env"}
-        default_choice = "1" if is_mac else "2"
+        default_choice = "1" if is_mac else "3"
         while True:
             choice = prompt(f"选择 (1/2/3)", default_choice)
             if choice in choices:
@@ -135,13 +146,13 @@ def main() -> int:
                 break
             print("  无效选择，请输入 1、2 或 3")
     else:
-        # 非交互且未指定，mac 默认 keychain，其他平台默认 plaintext
-        key_store = "keychain" if is_mac else "plaintext"
+        # 非交互且未指定，mac 默认 keychain，其他平台默认环境变量。
+        key_store = "keychain" if is_mac else "env"
 
     # keychain 仅 mac 可用
     if key_store == "keychain" and not is_mac:
-        print("⚠ 非 macOS 平台不支持 keychain，回退到 plaintext", file=sys.stderr)
-        key_store = "plaintext"
+        print("⚠ 非 macOS 平台不支持 keychain，回退到 env", file=sys.stderr)
+        key_store = "env"
 
     # ─── 清理旧存储方式的残留字段 ───
     old_store = prov.get("api_key_store")
@@ -154,7 +165,7 @@ def main() -> int:
 
     # ─── 按存储方式写入 ───
     if key_store == "keychain":
-        key = args.api_key or (prompt_secret("api_key") if interactive else "")
+        key = read_api_key(args, interactive)
         if not key:
             print("✗ api_key 不能为空", file=sys.stderr)
             return 1
@@ -169,7 +180,7 @@ def main() -> int:
             prov["api_key"] = key
 
     elif key_store == "plaintext":
-        key = args.api_key or (prompt_secret("api_key") if interactive else "")
+        key = read_api_key(args, interactive)
         if not key:
             print("✗ api_key 不能为空", file=sys.stderr)
             return 1
@@ -188,8 +199,8 @@ def main() -> int:
             return 1
         prov["api_key_store"] = "env"
         prov["api_key_env"] = env_var
-        # 如果用户同时传了 --api-key，提示如何设置环境变量
-        if args.api_key:
+        # 如果用户同时传了密钥，提示如何设置环境变量。
+        if args.api_key is not None or args.api_key_stdin:
             print(f"✓ 配置已写入，请确保环境变量 {env_var} 已设置")
         else:
             print(f"✓ 配置已写入，请在运行 Codex 前设置环境变量：")

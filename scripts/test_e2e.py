@@ -21,9 +21,9 @@ if not KEY:
 print(f"→ 配置: provider=volcengine base_url={BASE_URL} model={MODEL}")
 r = subprocess.run([PY, str(ROOT/"scripts/configure.py"),
     "--provider","volcengine","--base-url",BASE_URL,
-    "--api-key",KEY,"--vision-model",MODEL,
+    "--api-key-stdin","--vision-model",MODEL,
     "--keychain-account","volcengine"],
-    capture_output=True, text=True)
+    input=KEY, capture_output=True, text=True)
 print(r.stdout.strip()[-150:])
 if r.returncode != 0:
     print("配置失败:", r.stderr[-200:]); sys.exit(1)
