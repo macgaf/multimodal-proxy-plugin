@@ -48,6 +48,42 @@ CLIPBOARD_TMP_DIR = Path(os.environ.get(
 
 mcp = FastMCP("multimodal-proxy")
 
+# ─── 多轮追问 session 存储 ───
+# 每个 session 保存上一轮的媒体 data URL 和 provider/模型信息，
+# 后续追问只需传 prompts，不用重复传图。
+# session 30 分钟自动过期，避免内存泄漏。
+import threading
+_sessions: dict[str, dict] = {}
+_sessions_lock = threading.Lock()
+SESSION_TTL = 1800  # 30 分钟（秒）
+
+
+def _save_session(session_id: str, media_urls: list[str], provider: str, model: str) -> None:
+    """保存 session 的媒体 URL 列表和模型信息。"""
+    with _sessions_lock:
+        _sessions[session_id] = {
+            "media_urls": media_urls,
+            "provider": provider,
+            "model": model,
+            "ts": time.time(),
+        }
+        # 清理过期 session
+        now = time.time()
+        expired = [k for k, v in _sessions.items() if now - v["ts"] > SESSION_TTL]
+        for k in expired:
+            del _sessions[k]
+
+
+def _load_session(session_id: str) -> dict | None:
+    """读取 session；过期返回 None。"""
+    with _sessions_lock:
+        v = _sessions.get(session_id)
+        if v and time.time() - v["ts"] < SESSION_TTL:
+            return v
+        if v:
+            del _sessions[session_id]
+        return None
+
 
 def load_config() -> dict[str, Any]:
     """读取配置文件；不存在给出友好提示。"""
@@ -404,8 +440,12 @@ def process_multimodal(
     prompts: list[str] | None = None,
     model: str | None = None,
     provider: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     """通用多模态处理：接收任意数量的图片/视频/音频 + 提示词，交给多模态模型处理。
+
+    支持多轮追问：首次调用传入 media + prompts 获得分析结果；
+    后续追问可只传 prompts + session_id，复用上一轮的媒体，无需重复传图。
 
     适用于：图像分析、OCR、多图对比、视频内容分析、图表解读、UI 审查等。
     当主模型是纯文本模型（glm-5.2/deepseek-v4 等）无法直接处理媒体时使用。
@@ -414,19 +454,20 @@ def process_multimodal(
       media: 媒体文件列表，每个元素是本地路径或 http(s) URL。
              支持图片(jpg/png/gif/webp/bmp)、视频(mp4/mov/webm)、音频(mp3/wav/m4a)。
              可混用多种类型，按顺序提交给模型。
+             多轮追问时可为空（用 session_id 复用上一轮媒体）。
       prompts: 提示词列表，0~n 条。作为任务指令在媒体之前提交。
                例如 ["提取图中所有文字", "用表格输出"] 或 ["对比这两张图"]。
       model: 可选，覆盖配置中的默认模型。
       provider: 可选，指定使用哪个 provider。
+      session_id: 可选，多轮追问时传入首次调用返回的 session_id，
+                  可只传 prompts 复用上一轮媒体，无需重复传图。
 
     示例:
-      分析单图: process_multimodal(["/path/to/img.png"], ["描述这张图"])
+      首次分析: process_multimodal(["/path/to/img.png"], ["描述这张图"])
+      追问（复用媒体）: process_multimodal([], ["图中有几个人?"], session_id="abc123")
       多图对比: process_multimodal(["/a.png", "/b.png"], ["对比这两张图的布局"])
       OCR提取: process_multimodal(["/scan.jpg"], ["提取图中所有文字", "保留原始格式"])
-      纯提示词(无媒体): 不适用本工具，直接由主模型回答。
     """
-    if not media:
-        raise ValueError("media 不能为空。纯文本任务请直接由主模型处理。")
     prompts = prompts or []
 
     cfg = load_config()
@@ -435,11 +476,43 @@ def process_multimodal(
     if not m:
         raise ValueError("未配置视觉模型，请运行：bash scripts/install.sh")
 
-    content = build_content(media, prompts, prov_cfg)
+    # ─── 多轮追问逻辑 ───
+    if not media and session_id:
+        # 追问模式：从 session 复用上一轮的媒体 data URL
+        sess = _load_session(session_id)
+        if sess is None:
+            raise ValueError(
+                f"session_id '{session_id}' 不存在或已过期（30分钟）。"
+                "请重新传入 media 发起新请求。"
+            )
+        # 用 session 中的 data URL 重建 content（已转好的 base64）
+        content: list[dict[str, Any]] = []
+        for p_text in prompts:
+            if p_text.strip():
+                content.append({"type": "text", "text": p_text})
+        for url in sess["media_urls"]:
+            mtype = "image"  # session 存储时已知类型，统一按 image_url
+            content.append({"type": prov_cfg.get("content_types", {}).get("image", "image_url"),
+                            "image_url": {"url": url}})
+        m = m or sess["model"]
+    elif not media:
+        raise ValueError("media 不能为空（无 session_id 时必须传媒体）。纯文本任务请直接由主模型处理。")
+    else:
+        # 首次调用：正常处理
+        content = build_content(media, prompts, prov_cfg)
+        # 保存 media 的 data URL 到 session，供后续追问复用
+        if session_id is None:
+            import uuid
+            session_id = str(uuid.uuid4())
+        media_urls = [to_data_url(m_path) for m_path in media]
+        _save_session(session_id, media_urls, prov, m)
+
     r = client.chat.completions.create(model=m, messages=[
         {"role": "user", "content": content}
     ], max_tokens=2048)
-    return r.choices[0].message.content or ""
+    result = r.choices[0].message.content or ""
+    # 返回结果 + session_id，供后续追问
+    return f"{result}\n\n[session_id: {session_id}]" if session_id else result
 
 
 @mcp.tool()

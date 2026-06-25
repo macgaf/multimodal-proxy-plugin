@@ -305,7 +305,7 @@ def test_tool_signatures() -> None:
     # process_multimodal 签名
     sig = inspect.signature(process_multimodal)
     params = list(sig.parameters.keys())
-    if params == ["media", "prompts", "model", "provider"]:
+    if params == ["media", "prompts", "model", "provider", "session_id"]:
         ok(f"process_multimodal 参数: {params}")
     else:
         fail("process_multimodal 签名", f"参数: {params}")
@@ -340,6 +340,43 @@ def test_tool_signatures() -> None:
 
 # ─── 主入口 ───
 
+def test_session_logic() -> None:
+    """session 存储与过期逻辑（不调 API）。"""
+    print("\n[7] session 逻辑 — 多轮追问存储")
+
+    from multimodal_proxy import _save_session, _load_session, _sessions, _sessions_lock
+
+    # 清空旧 session
+    with _sessions_lock:
+        _sessions.clear()
+
+    # 保存 session
+    _save_session("test-sess-1", ["data:image/png;base64,xxx"], "openai", "gpt-4o")
+    sess = _load_session("test-sess-1")
+    if sess and sess["media_urls"] == ["data:image/png;base64,xxx"]:
+        ok("session 保存后可读取")
+    else:
+        fail("session 保存/读取", "数据不一致")
+
+    # 不存在的 session
+    if _load_session("nonexistent") is None:
+        ok("不存在的 session → None")
+    else:
+        fail("不存在的 session", "应返回 None")
+
+    # 过期 session（手动改时间戳模拟过期）
+    with _sessions_lock:
+        _sessions["test-sess-1"]["ts"] = 0  # 远古时间
+    if _load_session("test-sess-1") is None:
+        ok("过期 session → None 并自动清理")
+    else:
+        fail("过期 session", "应返回 None")
+
+    # 清理
+    with _sessions_lock:
+        _sessions.clear()
+
+
 def main() -> int:
     print("=" * 60)
     print("  multimodal-proxy dry-run 测试（离线，不调 API）")
@@ -351,6 +388,7 @@ def main() -> int:
     test_config_structure()
     test_resolve_api_key_logic()
     test_tool_signatures()
+    test_session_logic()
 
     print("\n" + "=" * 60)
     print(f"  结果: {PASS} 通过, {FAIL} 失败")
