@@ -1,3 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
+
+# .mcp.json 由 install.sh 用本机绝对路径生成，不提交含私有路径的版本
+.mcp.json
