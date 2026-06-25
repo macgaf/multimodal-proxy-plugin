@@ -1,0 +1,18 @@
+{
+  "name": "multimodal-proxy-plugin",
+  "owner": {
+    "name": "macgaf"
+  },
+  "metadata": {
+    "description": "给纯文本 Agent 模型长眼睛——把图像分析、OCR、视频/音频转字幕、图像生成外包给任意 OpenAI 兼容多模态模型",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "multimodal-proxy-plugin",
+      "source": "./",
+      "description": "通过 MCP 把多模态任务外包给外部多模态模型，配套 skill 规范智能激活规则",
+      "skills": ["multimodal-proxy"]
+    }
+  ]
+}
