@@ -23,6 +23,7 @@ description: >
 1. **先判断当前主模型是否多模态（能力信息优先于模型名称）**
    - 优先读取当前运行时、系统提示或模型元数据声明的输入能力；若标明支持图片、视频或音频，
      即视为多模态。
+   - 无法获取能力声明时，按下方模型名称清单判断；名称也不在清单中 → 默认视为多模态、不自动激活。
    - 已知多模态模型：GPT-4o / GPT-4.1 / GPT-5（包括 GPT-5.5 及后续支持多模态的版本）、
      Claude 3.5+、Gemini 全系、doubao-vision、qwen-vl、glm-4v、Kimi-vision 等
    - 已知纯文本模型：glm-5.2、deepseek-v4-flash/pro、多数纯文本 LLM
@@ -127,7 +128,7 @@ description: >
 
 ## 配置
 
-- 配置文件：
+- 配置文件：`~/.config/multimodal-proxy/config.json`
 - Linux 剪贴板依赖：Wayland 需安装 wl-clipboard（提供 wl-paste），X11 需安装 xclip
 - api_key：mac 默认 keychain（service=multimodal-proxy，account=provider名）
 - 重新配置：`bash scripts/install.sh`
