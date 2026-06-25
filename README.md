@@ -44,6 +44,8 @@
 
 ## 效果示例
 
+![demo](examples/demo.gif)
+
 纯文本主模型无法看图时，`process_multimodal` 把图片外包给多模态模型分析：
 
 **输入**：两张纯色拼接图（图A左红右蓝，图B左蓝右红）
