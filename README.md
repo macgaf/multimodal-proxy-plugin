@@ -1,32 +1,46 @@
+<div align="center">
+
 # multimodal-proxy-plugin
 
-为纯文本主模型（如 glm-5.2、deepseek-v4）提供多模态外包能力的 Codex 插件。
+> *「纯文本模型第一次能看图——截屏即分析，只在需要时外包」*
 
-当主模型不支持图像/视频/音频时，通过内置 MCP 把多模态任务转交给外部多模态模型
-（火山引擎 Coding Plan，如 doubao-seed-2.0-pro）处理，再把文字结果回填给主模型。
-配套 skill 规范了激活规则：仅纯文本主模型且有多模态需求时才启用。
-外部模型不绑定火山引擎——任何 OpenAI 兼容的多模态 API 均可（OpenAI / Qwen-VL / Ollama 等），火山引擎 doubao 仅为默认示例。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-blueviolet)](.codex-plugin/plugin.json)
+[![skills.sh](https://skills.sh/b/macgaf/multimodal-proxy-plugin)](https://skills.sh/b/macgaf/multimodal-proxy-plugin)
 
-## 架构
+**给纯文本 Agent 模型长眼睛——把图像分析、OCR、视频/音频转字幕、图像生成外包给任意 OpenAI 兼容多模态模型**
 
-```
-用户（纯文本主模型 glm-5.2）
-  │
-  ├─ 场景A：用户给出图片文件路径
-  │    → skill 判断主模型是纯文本 → 调用 process_multimodal
-  │
-  └─ 场景B：用户说"分析一下截屏"（Ctrl-V 粘贴被 Codex 硬拦截）
-       → skill 判断主模型是纯文本 → 先调用 save_clipboard_to_file
-       → 剪贴板图片落盘为临时文件 → 再调用 process_multimodal
-       ▼
-multimodal-proxy MCP
-  │  读配置 → 按 api_key_store 获取 key → 调用 doubao-seed-2.0-pro
-  ▼
-doubao-seed-2.0-pro（多模态模型）
-  │  返回图片/视频分析结果
-  ▼
-文字结果回填给主模型
-```
+[看效果](#效果示例) · [安装](#安装) · [触发方式](#触发方式) · [它和同类有什么不同](#它和同类有什么不同) · [安全边界](#安全边界)
+
+</div>
+
+---
+
+## 你什么时候需要它？
+
+你的主模型是纯文本模型（glm-5.2、deepseek-v4 等），用户却要看图、做 OCR、分析视频——
+主模型"看不见"，Codex 还会硬拦截 Ctrl-V 粘贴截图。这个插件就是解决这个痛点：
+**截屏到剪贴板 → skill 自动落盘 → 外包给多模态模型 → 文字结果回填**。
+
+## 触发方式
+
+- "分析这张图片"
+- "提取图片中的文字(OCR)"
+- "分析一下我刚截的屏"
+- "对比这两张图"
+- "把这段音频转成字幕"
+- "看看剪贴板里的截图"
+
+## 它和同类有什么不同
+
+| 维度 | 同类 vision MCP | 本插件 |
+|---|---|---|
+| 截屏穿透 | 假定图片能直接传入 | 剪贴板落盘绕过 Codex 对纯文本模型的硬拦截 |
+| 智能激活 | 常驻 | 仅纯文本主模型才激活，多模态模型自动让位 |
+| 密钥存储 | 明文 env | keychain / env / plaintext 三选一，默认不入仓库 |
+| 通用性 | 多数绑单一 provider | 任意 OpenAI 兼容 API（OpenAI / Qwen-VL / 火山 doubao / Ollama） |
+
+---
 
 ## 效果示例
 
