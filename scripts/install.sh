@@ -29,14 +29,14 @@ echo "✓ 依赖已就绪"
 # 3. 交互收集配置
 echo ""
 echo "── 多模态模型配置 ──"
-read -rp "provider 名称 [volcengine]: " PROVIDER
-PROVIDER="${PROVIDER:-volcengine}"
+read -rp "provider 名称 [openai]: " PROVIDER
+PROVIDER="${PROVIDER:-openai}"
 
-read -rp "base_url [https://ark.cn-beijing.volces.com/api/coding/v3]: " BASE_URL
-BASE_URL="${BASE_URL:-https://ark.cn-beijing.volces.com/api/coding/v3}"
+read -rp "base_url [https://api.openai.com/v1]: " BASE_URL
+BASE_URL="${BASE_URL:-https://api.openai.com/v1}"
 
-read -rp "图像理解模型 (vision) [doubao-seed-2.0-pro]: " VISION_MODEL
-VISION_MODEL="${VISION_MODEL:-doubao-seed-2.0-pro}"
+read -rp "图像理解模型 (vision) [gpt-4o]: " VISION_MODEL
+VISION_MODEL="${VISION_MODEL:-gpt-4o}"
 
 read -rp "视频理解模型 (video，可留空): " VIDEO_MODEL
 read -rp "音频理解模型 (audio，可留空): " AUDIO_MODEL

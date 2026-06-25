@@ -11,8 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 PY = str(ROOT / ".venv" / "bin" / "python")
 KEY = os.environ.get("ARK_API_KEY", "")
-BASE_URL = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
-MODEL = os.environ.get("ARK_VISION_MODEL", "doubao-seed-2.0-pro")
+BASE_URL = os.environ.get("ARK_BASE_URL", "https://api.openai.com/v1")
+MODEL = os.environ.get("ARK_VISION_MODEL", "gpt-4o")
 
 if not KEY:
     print("✗ 请设置环境变量 ARK_API_KEY"); sys.exit(1)

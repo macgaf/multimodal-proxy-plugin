@@ -92,12 +92,12 @@ def read_api_key(args: argparse.Namespace, interactive: bool) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="配置 multimodal-proxy")
-    parser.add_argument("--provider", default="volcengine", help="provider 名称")
-    parser.add_argument("--base-url", default="https://ark.cn-beijing.volces.com/api/coding/v3", help="base_url")
+    parser.add_argument("--provider", default="openai", help="provider 名称")
+    parser.add_argument("--base-url", default="https://api.openai.com/v1", help="base_url")
     key_input = parser.add_mutually_exclusive_group()
     key_input.add_argument("--api-key", default=None, help="api_key（不推荐；会暴露在进程参数中）")
     key_input.add_argument("--api-key-stdin", action="store_true", help="从标准输入读取 api_key")
-    parser.add_argument("--vision-model", default="doubao-seed-2.0-pro", help="视觉模型名")
+    parser.add_argument("--vision-model", default="gpt-4o", help="视觉模型名")
     parser.add_argument(
         "--key-store",
         choices=VALID_STORES,
