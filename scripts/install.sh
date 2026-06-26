@@ -118,16 +118,62 @@ cat > "$PLUGIN_ROOT/.mcp.json" <<MCPJSON
 MCPJSON
 echo "✓ .mcp.json 已生成"
 
-# 8. 注册到 Codex
-echo "→ 注册插件到 Codex"
-mkdir -p "$HOME/plugins" "$HOME/.agents/plugins"
-ln -sfn "$PLUGIN_ROOT" "$HOME/plugins/multimodal-proxy-plugin"
-if command -v codex >/dev/null 2>&1; then
-  codex plugin add multimodal-proxy-plugin@personal 2>/dev/null || echo "  (插件已安装或需手动通过 /plugins 安装)"
-  echo "✓ 已注册到 Codex，新开 Codex 线程即可使用"
-else
-  echo "⚠ 未找到 codex CLI，请在 Codex 应用中通过 /plugins 安装"
+# 8. 探测宿主并注册
+#    --target codex|zcode|auto（默认 auto）：auto 优先 codex CLI，其次 ~/.zcode/cli/
+TARGET="auto"
+shift_next=0
+for a in "$@"; do
+  case "$a" in
+    --target) shift_next=1 ;;
+    --target=*) TARGET="${a#--target=}" ;;
+    codex|zcode|auto) [ "$shift_next" = "1" ] && TARGET="$a" && shift_next=0 ;;
+    *) shift_next=0 ;;
+  esac
+done
+
+ZCODE_CLI="$HOME/.zcode/cli"
+HAS_CODEX="no"; command -v codex >/dev/null 2>&1 && HAS_CODEX="yes"
+HAS_ZCODE="no"; [ -d "$ZCODE_CLI" ] && HAS_ZCODE="yes"
+
+# 决定目标
+if [ "$TARGET" = "auto" ]; then
+  if [ "$HAS_CODEX" = "yes" ]; then TARGET="codex"
+  elif [ "$HAS_ZCODE" = "yes" ]; then TARGET="zcode"
+  else TARGET="none"
+  fi
 fi
+
+case "$TARGET" in
+  codex)
+    if [ "$HAS_CODEX" != "yes" ]; then
+      echo "✗ --target codex 但未找到 codex CLI"; exit 1
+    fi
+    echo "→ 注册插件到 Codex"
+    mkdir -p "$HOME/plugins" "$HOME/.agents/plugins"
+    ln -sfn "$PLUGIN_ROOT" "$HOME/plugins/multimodal-proxy-plugin"
+    codex plugin add multimodal-proxy-plugin@personal 2>/dev/null || echo "  (插件已安装或需手动通过 /plugins 安装)"
+    echo "✓ 已注册到 Codex，新开 Codex 线程即可使用"
+    ;;
+  zcode)
+    if [ "$HAS_ZCODE" != "yes" ]; then
+      echo "✗ --target zcode 但未检测到 ZCode 安装（~/.zcode/cli/ 不存在）"; exit 1
+    fi
+    echo "→ 注册插件到 ZCode"
+    MARKETPLACE="${ZCODE_MARKETPLACE:-personal}"
+    VERSION="$(python3 -c "import json;print(json.load(open('$PLUGIN_ROOT/.zcode-plugin/plugin.json'))['version'])")"
+    "$PY" "$PLUGIN_ROOT/scripts/zcode_register.py" \
+      --plugin-root "$PLUGIN_ROOT" \
+      --marketplace "$MARKETPLACE" \
+      --version "$VERSION" \
+      --cli-root "$ZCODE_CLI"
+    echo "✓ 已注册到 ZCode，重启 ZCode 后即可使用"
+    ;;
+  none)
+    echo "ℹ 未检测到 codex CLI 或 ZCode（~/.zcode/cli/），跳过自动注册"
+    echo "  MCP 配置已生成: $PLUGIN_ROOT/.mcp.json"
+    echo "  可手动将该 MCP server 配置加入你的 Agent 客户端"
+    ;;
+esac
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
@@ -135,5 +181,7 @@ echo "  ✓ 安装完成"
 echo "═══════════════════════════════════════════════════════════"
 echo "配置文件: ~/.config/multimodal-proxy/config.json"
 echo "MCP 配置: $PLUGIN_ROOT/.mcp.json"
+[ "$TARGET" = "zcode" ] && echo "ZCode 清单: $PLUGIN_ROOT/.zcode-plugin/plugin.json"
 echo ""
 echo "如需重新配置模型，再次运行：bash scripts/install.sh"
+echo "指定宿主：bash scripts/install.sh --target zcode|codex"
