@@ -3,13 +3,13 @@
 """multimodal-proxy MCP server
 
 通用多模态代理：通过 OpenAI 兼容 API 将多模态任务外包给支持视觉的模型
-（如 doubao-seed-2.0-pro）。专供主模型为纯文本模型（glm-5.2/deepseek-v4 等）时使用。
+（如 doubao-seed-2.0-lite）。专供主模型为纯文本模型（glm-5.2/deepseek-v4 等）时使用。
 
 核心设计：
   - save_clipboard_to_file：读系统剪贴板，图片落盘返回路径（绕过 Ctrl-V 硬拦截）
   - process_multimodal：接收任意数量的图片/视频/音频 + 提示词，交给模型处理
 
-已验证的模型能力（doubao-seed-2.0-pro, Coding Plan）：
+已验证的模型能力（doubao-seed-2.0-lite, Coding Plan）：
   - 图片 image_url      ✅ 支持（多图对比）
   - 视频 video_url      ✅ 类型被接受（需可访问 URL）
   - 音频 input_audio    ⚠️ 需在火山方舟控制台确认音频能力开通状态

@@ -1,6 +1,6 @@
 # 示例：多图对比
 
-> 真实运行产物（2026-06-26，doubao-seed-2.0-pro via 火山引擎 Coding Plan）
+> 真实运行产物（2026-06-26，doubao-seed-2.0-lite via 火山引擎 Coding Plan）
 
 ## 场景
 

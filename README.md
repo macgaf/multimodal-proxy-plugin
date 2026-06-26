@@ -58,7 +58,7 @@ process_multimodal(
 )
 ```
 
-**输出**（[真实运行产物](examples/multi-image-comparison.md)，doubao-seed-2.0-pro）：
+**输出**（[真实运行产物](examples/multi-image-comparison.md)，doubao-seed-2.0-lite）：
 
 > 这两张图都是将画面竖直二等分、两色块各占一半的布局，都仅包含红色、蓝色两种颜色，二者布局差异是**左右色块的颜色完全互换**：
 > 1. 图A：左侧半区为红色，右侧半区为蓝色，是「红在左、蓝在右」的布局；
@@ -123,13 +123,13 @@ process_multimodal(
 
 根据文字提示词生成图片。需配置 image_generation 模型。
 
-## 模型能力（已验证 doubao-seed-2.0-pro, Coding Plan）
+## 模型能力（已验证 doubao-seed-2.0-lite, Coding Plan）
 
 | 媒体类型 | 支持 | 说明 |
 |---|---|---|
 | 图片 image_url | ✅ | 支持多图对比 |
 | 视频 video_url | ✅ | 需可访问 URL |
-| 音频 input_audio | ⚠️ | doubao-seed-2-0-pro 不支持；mini/lite 260428 元数据标注支持但 Coding Plan key 实测被拒，需控制台确认开通 |
+| 音频 input_audio | ⚠️ | lite 260428 元数据标注支持，但 Coding Plan key 实测被拒，需控制台确认开通 |
 
 ## 安装
 
@@ -172,7 +172,7 @@ macOS 默认使用 keychain，其他平台默认使用 env；plaintext 仅在明
       "api_key_store": "keychain",
       "keychain_service": "multimodal-proxy",
       "keychain_account": "volcengine",
-      "models": {"vision": "doubao-seed-2.0-pro"}
+      "models": {"vision": "doubao-seed-2.0-lite"}
     }
   }
 }
@@ -190,7 +190,7 @@ macOS 默认使用 keychain，其他平台默认使用 env；plaintext 仅在明
       "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
       "api_key_store": "plaintext",
       "api_key": "ark-xxxxxxxxxxxx",
-      "models": {"vision": "doubao-seed-2.0-pro"}
+      "models": {"vision": "doubao-seed-2.0-lite"}
     }
   }
 }
@@ -206,7 +206,7 @@ macOS 默认使用 keychain，其他平台默认使用 env；plaintext 仅在明
       "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
       "api_key_store": "env",
       "api_key_env": "MULTIMODAL_PROXY_API_KEY_VOLCENGINE",
-      "models": {"vision": "doubao-seed-2.0-pro"}
+      "models": {"vision": "doubao-seed-2.0-lite"}
     }
   }
 }
@@ -241,4 +241,4 @@ export MULTIMODAL_PROXY_API_KEY_VOLCENGINE='ark-xxxxxxxxxxxx'
 .venv/bin/python scripts/test_e2e.py
 ```
 
-验证场景：主模型 glm-5.2 + 图片分析转 doubao-seed-2.0-pro。
+验证场景：主模型 glm-5.2 + 图片分析转 doubao-seed-2.0-lite。

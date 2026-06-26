@@ -122,9 +122,9 @@ description: >
 - **结果回填**：工具返回的是文字，直接用于后续回答。
 - **错误处理**：若报"未找到配置文件"或"无法获取 api_key"，提示用户运行
   `bash scripts/install.sh` 重新配置。
-- **模型能力差异**：doubao-seed-2.0-pro（260215）实测支持多图和视频，
-  不支持音频。doubao-seed-2-0-mini/lite 260428 元数据标注含 audio，
-  但 Coding Plan key 实测仍被拒——需在控制台确认音频开通状态。
+- **模型能力差异**：doubao-seed-2.0-lite（260428）实测支持多图和视频；
+  元数据标注含 audio，但 Coding Plan key 实测仍被拒——需在控制台确认音频开通状态。
+  doubao-seed-2.0-pro（260215）同样支持多图和视频，不支持音频。
 
 ## 配置
 
