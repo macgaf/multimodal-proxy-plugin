@@ -203,7 +203,7 @@ def main() -> int:
         if args.api_key is not None or args.api_key_stdin:
             print(f"✓ 配置已写入，请确保环境变量 {env_var} 已设置")
         else:
-            print(f"✓ 配置已写入，请在运行 Codex 前设置环境变量：")
+            print(f"✓ 配置已写入，请在运行 Agent 客户端前设置环境变量：")
             print(f"  export {env_var}='你的-api-key'")
             print(f"  （建议写入 ~/.zshrc 或 ~/.bashrc）")
 
