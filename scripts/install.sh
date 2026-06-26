@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -*- coding: utf-8 -*-
 # multimodal-proxy 插件安装脚本
-# 功能：创建虚拟环境 + 安装依赖 + 交互配置多模态模型 + 生成 .mcp.json + 注册 Codex
+# 功能：创建虚拟环境 + 安装依赖 + 交互配置多模态模型 + 生成 .mcp.json + 注册宿主（Codex/ZCode）
 set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -84,7 +84,7 @@ if [ "$KEY_STORE" = "env" ]; then
   ENV_NAME="${ENV_NAME:-$DEFAULT_ENV_NAME}"
   CONFIG_ARGS+=(--api-key-env "$ENV_NAME")
   echo "→ 配置文件将记录环境变量名: $ENV_NAME"
-  echo "  请在运行 Codex 前设置该环境变量："
+  echo "  请在运行 Agent 客户端前设置该环境变量："
   echo "    export $ENV_NAME='你的-api-key'"
   echo "  （建议写入 ~/.zshrc 或 ~/.bashrc）"
 else
@@ -160,7 +160,7 @@ case "$TARGET" in
     fi
     echo "→ 注册插件到 ZCode"
     MARKETPLACE="${ZCODE_MARKETPLACE:-personal}"
-    VERSION="$(python3 -c "import json;print(json.load(open('$PLUGIN_ROOT/.zcode-plugin/plugin.json'))['version'])")"
+    VERSION="$("$PY" -c "import json;print(json.load(open('$PLUGIN_ROOT/.zcode-plugin/plugin.json'))['version'])")"
     "$PY" "$PLUGIN_ROOT/scripts/zcode_register.py" \
       --plugin-root "$PLUGIN_ROOT" \
       --marketplace "$MARKETPLACE" \
@@ -172,6 +172,9 @@ case "$TARGET" in
     echo "ℹ 未检测到 codex CLI 或 ZCode（~/.zcode/cli/），跳过自动注册"
     echo "  MCP 配置已生成: $PLUGIN_ROOT/.mcp.json"
     echo "  可手动将该 MCP server 配置加入你的 Agent 客户端"
+    ;;
+  *)
+    echo "✗ 未知 --target: $TARGET（可选值：zcode | codex | auto）"; exit 1
     ;;
 esac
 
