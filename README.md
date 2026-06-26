@@ -143,7 +143,7 @@ bash scripts/install.sh
 | 宿主 | 探测条件 | 注册动作 |
 |---|---|---|
 | Codex | 存在 `codex` CLI | symlink + `codex plugin add` |
-| ZCode | 存在 `~/.zcode/cli/` | symlink 进 cache + 写 marketplace.json + enabledPlugins |
+| ZCode | 存在 `~/.zcode/cli/` | 写 `plugins.dirs`（插件根路径加入 config.json） |
 | 无 | 两者都没有 | 仅生成 `.mcp.json`，提示手动配置 |
 
 交互式引导输入 provider、base_url、模型名，以及 **api_key 存储方式（三选一）**：
