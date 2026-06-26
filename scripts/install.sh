@@ -158,13 +158,9 @@ case "$TARGET" in
     if [ "$HAS_ZCODE" != "yes" ]; then
       echo "✗ --target zcode 但未检测到 ZCode 安装（~/.zcode/cli/ 不存在）"; exit 1
     fi
-    echo "→ 注册插件到 ZCode"
-    MARKETPLACE="${ZCODE_MARKETPLACE:-personal}"
-    VERSION="$("$PY" -c "import json;print(json.load(open('$PLUGIN_ROOT/.zcode-plugin/plugin.json'))['version'])")"
+    echo "→ 注册插件到 ZCode（写入 ~/.zcode/cli/config.json 的 plugins.dirs）"
     "$PY" "$PLUGIN_ROOT/scripts/zcode_register.py" \
       --plugin-root "$PLUGIN_ROOT" \
-      --marketplace "$MARKETPLACE" \
-      --version "$VERSION" \
       --cli-root "$ZCODE_CLI"
     echo "✓ 已注册到 ZCode，重启 ZCode 后即可使用"
     ;;
