@@ -8,7 +8,7 @@
 注册三步（幂等）：
   1. cache 目录 symlink 到 plugin_root（已存在且非 symlink 则报错，不删用户内容）
   2. 合并 marketplaces/<marketplace>/marketplace.json（upsert，保留其他条目）
-  3. 写 ~/.zcode/cli/config.json 的 enabledPlugins["<plugin>@<marketplace>"]=true（保留其他键）
+  3. 写 ~/.zcode/cli/config.json 的 plugins.enabledPlugins["<plugin>@<marketplace>"]=true（保留其他键）
 """
 from __future__ import annotations
 
@@ -76,6 +76,7 @@ def register(
     mp_path.write_text(json.dumps(mp, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ── 3. 写 enabledPlugins ──
+    # ZCode 的 config schema 为嵌套结构：config["plugins"]["enabledPlugins"]
     cfg = {}
     if config_path.exists():
         try:
@@ -84,7 +85,10 @@ def register(
                 raise ValueError
         except (json.JSONDecodeError, ValueError):
             raise ValueError(f"config.json 不是合法 JSON 对象，未覆盖: {config_path}")
-    enabled = cfg.setdefault("enabledPlugins", {})
+    plugins_cfg = cfg.setdefault("plugins", {})
+    if not isinstance(plugins_cfg, dict):
+        raise ValueError(f"config.json 的 plugins 字段不是对象，未覆盖: {config_path}")
+    enabled = plugins_cfg.setdefault("enabledPlugins", {})
     enabled[f"{plugin_name}@{marketplace}"] = True
     config_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 

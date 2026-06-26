@@ -51,9 +51,9 @@ def test_register_creates_cache_symlink_and_marketplace_and_enables():
         assert entry["version"] == "0.1.0"
         assert entry["cachePath"] == str(cache_dir)
 
-        # 3. enabledPlugins 写入，且不破坏其他键
+        # 3. enabledPlugins 写入（嵌套在 plugins 下），且不破坏其他键
         cfg = json.loads((cli / "config.json").read_text("utf-8"))
-        assert cfg["enabledPlugins"]["multimodal-proxy-plugin@personal"] is True
+        assert cfg["plugins"]["enabledPlugins"]["multimodal-proxy-plugin@personal"] is True
 
 
 def test_register_preserves_existing_enabled_plugins_and_marketplace_entries():
@@ -63,10 +63,10 @@ def test_register_preserves_existing_enabled_plugins_and_marketplace_entries():
         plugin_root = tmp / "my-plugin"
         plugin_root.mkdir()
 
-        # 预置已有插件
+        # 预置已有插件（ZCode 真实 config 结构：plugins.enabledPlugins 嵌套）
         cfg_path = cli / "config.json"
         cfg_path.write_text(json.dumps({
-            "enabledPlugins": {"superpowers@zcode-plugins-official": True}
+            "plugins": {"enabledPlugins": {"superpowers@zcode-plugins-official": True}}
         }), encoding="utf-8")
         mp_dir = cli / "plugins" / "marketplaces" / "personal"
         mp_dir.mkdir(parents=True)
@@ -85,8 +85,8 @@ def test_register_preserves_existing_enabled_plugins_and_marketplace_entries():
         )
 
         cfg = json.loads(cfg_path.read_text("utf-8"))
-        assert cfg["enabledPlugins"]["superpowers@zcode-plugins-official"] is True
-        assert cfg["enabledPlugins"]["multimodal-proxy-plugin@personal"] is True
+        assert cfg["plugins"]["enabledPlugins"]["superpowers@zcode-plugins-official"] is True
+        assert cfg["plugins"]["enabledPlugins"]["multimodal-proxy-plugin@personal"] is True
 
         mp = json.loads((mp_dir / "marketplace.json").read_text("utf-8"))
         names = [p["name"] for p in mp["plugins"]]
