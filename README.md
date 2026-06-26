@@ -6,6 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Codex Plugin](https://img.shields.io/badge/Codex-Plugin-blueviolet)](.codex-plugin/plugin.json)
+[![ZCode Plugin](https://img.shields.io/badge/ZCode-Plugin-green)](.zcode-plugin/plugin.json)
 [![skills.sh](https://skills.sh/b/macgaf/multimodal-proxy-plugin)](https://skills.sh/b/macgaf/multimodal-proxy-plugin)
 
 **给纯文本 Agent 模型长眼睛——把图像分析、OCR、视频/音频转字幕、图像生成外包给任意 OpenAI 兼容多模态模型**
@@ -19,7 +20,7 @@
 ## 你什么时候需要它？
 
 你的主模型是纯文本模型（glm-5.2、deepseek-v4 等），用户却要看图、做 OCR、分析视频——
-主模型"看不见"，Codex 还会硬拦截 Ctrl-V 粘贴截图。这个插件就是解决这个痛点：
+主模型"看不见"，Agent 客户端还会硬拦截 Ctrl-V 粘贴截图。这个插件就是解决这个痛点：
 **截屏到剪贴板 → skill 自动落盘 → 外包给多模态模型 → 文字结果回填**。
 
 ## 触发方式
@@ -35,7 +36,7 @@
 
 | 维度 | 同类 vision MCP | 本插件 |
 |---|---|---|
-| 截屏穿透 | 假定图片能直接传入 | 剪贴板落盘绕过 Codex 对纯文本模型的硬拦截 |
+| 截屏穿透 | 假定图片能直接传入 | 剪贴板落盘绕过纯文本 Agent 主模型对图片输入的硬拦截 |
 | 智能激活 | 常驻 | 仅纯文本主模型才激活，多模态模型自动让位 |
 | 密钥存储 | 明文 env | keychain / env / plaintext 三选一，默认不入仓库 |
 | 通用性 | 多数绑单一 provider | 任意 OpenAI 兼容 API（OpenAI / Qwen-VL / 火山 doubao / Ollama） |
@@ -69,6 +70,7 @@ process_multimodal(
 
 | 部分 | 路径 | 作用 |
 |---|---|---|
+| ZCode 清单 | `.zcode-plugin/plugin.json` | ZCode 插件清单（内联 MCP + 变量路径） |
 | MCP server | `mcp/multimodal_proxy.py` | 通用多模态代理，3 个工具 |
 | Skill | `skills/multimodal-proxy/SKILL.md` | 激活规则与使用规范 |
 | 安装脚本 | `scripts/install.sh` | 虚拟环境 + 依赖 + 配置 + 注册 |
@@ -80,7 +82,7 @@ process_multimodal(
 
 读取系统剪贴板内容，如果是图片则保存为临时 PNG 文件并返回路径。
 
-**用途**：绕过 Codex 对纯文本模型的图片输入硬拦截。用户 Ctrl-V 粘贴截图会被拦截，
+**用途**：绕过纯文本 Agent 主模型对图片输入的硬拦截。用户 Ctrl-V 粘贴截图会被拦截，
 但截图仍在系统剪贴板中。本工具从剪贴板读取图片，落盘为文件，返回路径供后续分析。
 
 **跨平台支持**：
@@ -94,7 +96,7 @@ process_multimodal(
 
 工作流：
 1. 用户先截图到剪贴板（macOS: `Ctrl-Shift-Cmd-4`，Windows: `Win-Shift-S`，Linux: 桌面截图工具）
-2. 在 Codex 里输入文本指令，如"分析一下我刚截的屏"（不要 Ctrl-V 粘贴图片）
+2. 在 Agent 客户端里输入文本指令，如"分析一下我刚截的屏"（不要 Ctrl-V 粘贴图片）
 3. 主模型调用本工具 → 剪贴板图片落盘 → 返回路径
 4. 主模型调用 `process_multimodal([路径], [提示词])` 完成分析
 
@@ -135,6 +137,14 @@ process_multimodal(
 cd multimodal-proxy-plugin
 bash scripts/install.sh
 ```
+
+安装脚本自动探测宿主（可通过 `--target zcode|codex|auto` 指定，默认 auto）：
+
+| 宿主 | 探测条件 | 注册动作 |
+|---|---|---|
+| Codex | 存在 `codex` CLI | symlink + `codex plugin add` |
+| ZCode | 存在 `~/.zcode/cli/` | symlink 进 cache + 写 marketplace.json + enabledPlugins |
+| 无 | 两者都没有 | 仅生成 `.mcp.json`，提示手动配置 |
 
 交互式引导输入 provider、base_url、模型名，以及 **api_key 存储方式（三选一）**：
 
@@ -202,7 +212,7 @@ macOS 默认使用 keychain，其他平台默认使用 env；plaintext 仅在明
 }
 ```
 
-使用 env 模式时，需在运行 Codex 前设置环境变量：
+使用 env 模式时，需在运行 Agent 客户端前设置环境变量：
 
 ```bash
 export MULTIMODAL_PROXY_API_KEY_VOLCENGINE='ark-xxxxxxxxxxxx'

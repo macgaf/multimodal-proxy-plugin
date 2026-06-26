@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """multimodal-proxy MCP server
 
-通用多模态代理：通过火山引擎 Coding Plan API 将多模态任务外包给支持视觉的模型
+通用多模态代理：通过 OpenAI 兼容 API 将多模态任务外包给支持视觉的模型
 （如 doubao-seed-2.0-pro）。专供主模型为纯文本模型（glm-5.2/deepseek-v4 等）时使用。
 
 核心设计：
@@ -387,7 +387,7 @@ def _read_clipboard(dest_path: str) -> str:
 def save_clipboard_to_file() -> str:
     """读取系统剪贴板内容并保存为临时文件（支持 macOS / Windows / Linux）。
 
-    用于绕过 Codex 对纯文本模型的图片输入硬拦截：用户 Ctrl-V 粘贴截图会被拦截，
+    用于绕过纯文本 Agent 主模型对图片输入的硬拦截：用户 Ctrl-V 粘贴截图会被拦截，
     但截图仍在系统剪贴板中。本工具从剪贴板读取图片数据，保存为临时 PNG 文件，
     返回文件路径，供后续 process_multimodal 工具分析。
 
@@ -401,7 +401,7 @@ def save_clipboard_to_file() -> str:
          - macOS：Ctrl-Shift-Cmd-4
          - Windows：Win-Shift-S（截图工具）
          - Linux：取决于桌面环境（如 gnome-screenshot -c）
-      2. 在 Codex 里输入文本指令，如"分析一下我刚截的屏"
+      2. 在 Agent 客户端里输入文本指令，如"分析一下我刚截的屏"
       3. 主模型调用本工具 → 剪贴板图片落盘 → 返回路径
       4. 主模型调用 process_multimodal([路径], [提示词]) 完成分析
 

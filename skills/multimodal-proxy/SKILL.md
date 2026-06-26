@@ -48,7 +48,7 @@ description: >
 
 **跨平台支持**：macOS（osascript）、Windows（PowerShell）、Linux（wl-paste / xclip）。
 
-**用途**：绕过 Codex 对纯文本模型的图片输入硬拦截。用户 Ctrl-V 粘贴截图会被拦截，
+**用途**：绕过纯文本 Agent 主模型对图片输入的硬拦截。用户 Ctrl-V 粘贴截图会被拦截，
 但截图仍在系统剪贴板中。本工具从剪贴板读出图片，落盘为文件，返回路径供后续分析。
 
 **无参数**。
