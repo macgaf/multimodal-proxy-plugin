@@ -1,6 +1,6 @@
 {
   "name": "multimodal-proxy-plugin",
-  "version": "0.1.0+codex.20260625182505",
+  "version": "0.1.0",
   "description": "为纯文本主模型（如 glm-5.2、deepseek-v4）提供多模态外包能力：通过 MCP 把图像分析、OCR、视频分析、音频转字幕、图像生成转交给外部多模态模型处理。",
   "author": {
     "name": "local"
